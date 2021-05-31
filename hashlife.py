@@ -7,6 +7,12 @@ Created on Thur April 15 08:57:12 2021
 """
 
 import math
+import weakref
+
+GROUP = [
+    "kevin.messali@polytechnique.edu",
+    "riho.pallum@polytechnique.edu",
+]
 
 
 ########################################################################################################################
@@ -74,7 +80,7 @@ class NaiveUniverse(Universe):
 ########################################################################################################################
 #                                           Question 2, 3, 4, 5 and 6                                                  #
 ########################################################################################################################
-nodes = dict()
+nodes = weakref.WeakValueDictionary()
 
 
 class AbstractNode:
@@ -161,73 +167,49 @@ class AbstractNode:
     ####################################################################################################################
 
     def forward(self):
+        if self.population == 0:
+            return self
         self._cache = dict() if self._cache is None else self._cache
+        current_node = AbstractNode.node(self.nw, self.ne, self.sw, self.se)
+        if current_node in self._cache:
+            return self._cache[current_node]
+        if self.level < 2:
+            self._cache[self] = None
+        if self.level == 2:
+            q_nw, q_ne, q_sw, q_se = current_node.nw, current_node.ne, current_node.sw, current_node.se
+            node = AbstractNode.node(q_nw.se, q_ne.sw, q_sw.ne, q_se.nw)
+            naive_uni = NaiveUniverse(4, 4, [[False, False, False, False], [False, node.sw.alive, node.se.alive, False],
+                                             [False, node.nw.alive, node.ne.alive, False],
+                                             [False, False, False, False]])
+            naive_uni.round()
+            nw, ne, sw, se = naive_uni.get(1, 2), naive_uni.get(2, 2), naive_uni.get(1, 1), naive_uni.get(2, 1)
+            self._cache[current_node] = AbstractNode.node(AbstractNode.cell(nw), AbstractNode.cell(ne),
+                                                          AbstractNode.cell(sw), AbstractNode.cell(se))
+        if self.level > 2:
+            q_nw, q_ne, q_sw, q_se = current_node.nw, current_node.ne, current_node.sw, current_node.se
+            self._cache[current_node] = AbstractNode.node(q_nw.se, q_ne.sw, q_sw.ne, q_se.nw)
+        return self._cache[current_node]
 
-        if self not in self._cache:
-            if self.level < 2:
-                self._cache[self] = None
-                # return None
-
-            if self.level == 2:
-                NaiveUniverse(4, 4, self).round()
-                self._cache[self] = self
-                # return NaiveUniverse(4, 4, self).round()
-
-            if self.level > 2:
-                q_nw, q_ne, q_sw, q_se = self.nw, self.ne, self.sw, self.se
-                self._cache[self] = Node(q_nw.se, q_ne.sw, q_sw.ne, q_se.nw)
-                # return Node(q_nw.se, q_ne.sw, q_sw.ne, q_se.nw)
-
-        return self._cache[self]
-
-        # return Node(q_nw.se, q_ne.sw, q_sw.ne, q_se.nw)
-        # q_tc, q_bc, q_cl, q_cr, q_cc = self.quad_cv(q_nw, q_ne), \
-        #                                self.quad_cv(q_sw, q_se), \
-        #                                self.quad_ch(q_nw, q_sw), \
-        #                                self.quad_ch(q_ne, q_se), \
-        #                                Node(q_nw.se, q_ne.sw, q_sw.ne, q_se.nw)
-
-        # r_nw = self.central_area(q_nw)
-        # r_ne = self.central_area(q_ne)
-        # r_sw = self.central_area(q_sw)
-        # r_se = self.central_area(q_se)
-        # r_tc = self.central_area(q_tc)
-        # r_bc = self.central_area(q_bc)
-        # r_cl = self.central_area(q_cl)
-        # r_cr = self.central_area(q_cr)
-        # r_cc = self.central_area(q_cc)
+        # if self not in self._cache:
+        #     if self.level < 2:
+        #         self._cache[self] = None
+        #         print("level < 2")
+        #         # return None
         #
+        #     if self.level == 2:
+        #         NaiveUniverse(4, 4, self).round()
+        #         self._cache[self] = AbstractNode.node(self.nw, self.ne, self.sw, self.se)
+        #         print("level = 2")
+        #         # return NaiveUniverse(4, 4, self).round()
         #
-        # a_nw = Node(r_nw, r_tc, r_cl, r_cc)
-        # # b_nw = q_cc.nw
-        # a_ne = Node(r_tc, r_ne, r_cc, r_cr)
-        # # b_ne = q_cc.ne
-        # a_sw = Node(r_cl, r_cc, r_sw, r_bc)
-        # # b_sw = q_cc.sw
-        # a_se = Node(r_cc, r_cr, r_bc, r_se)
-        # # b_se = q_cc.se
-        # return q_cc
+        #     if self.level > 2:
+        #         q_nw, q_ne, q_sw, q_se = self.nw, self.ne, self.sw, self.se
+        #         self._cache[self] = AbstractNode.node(q_nw.se, q_ne.sw, q_sw.ne, q_se.nw)
+        #         print("level > 2", self._cache)
+        #         # return Node(q_nw.se, q_ne.sw, q_sw.ne, q_se.nw)
+        # return self._cache[self]
 
-    # def central_area(self, q_tree):
-    #     return Node(q_tree.nw.se, q_tree.ne.sw, q_tree.sw.ne, q_tree.se.nw)
-    #
-    # def quad_cv(self, q_left, q_right):
-    #     """
-    #     Compute the quad tree area of the one on the vertical axis.
-    #     :param q_left:
-    #     :param q_right:
-    #     :return:
-    #     """
-    #     return Node(q_left.ne, q_right.nw, q_left.se, q_right.sw)
-    #
-    # def quad_ch(self, q_top, q_bottom):
-    #     """
-    #     Compute the quad tree area of the one on the horizontal axis.
-    #     :param q_top:
-    #     :param q_bottom:
-    #     :return:
-    #     """
-    #     return Node(q_top.sw, q_top.se, q_bottom.nw, q_bottom.ne)
+
 
     ####################################################################################################################
     #                                           Question 6                                                             #
@@ -235,13 +217,7 @@ class AbstractNode:
 
     @staticmethod
     def canon(node):
-        # if node in nodes:
-        #     return nodes[node]
-        # nodes[node] = node
-        for n in nodes:
-            if n == node:
-                return nodes[node]
-        nodes[node] = node
+        return nodes.setdefault(node, node)
 
     ####################################################################################################################
     #                                           Question 7                                                             #
@@ -249,11 +225,13 @@ class AbstractNode:
 
     @staticmethod
     def cell(alive):
-        return CellNode(alive)
+        return AbstractNode.canon(CellNode(alive))
+        # return CellNode(alive)
 
     @staticmethod
     def node(nw, ne, sw, se):
-        return Node(nw, ne, sw, se)
+        return AbstractNode.canon(Node(nw, ne, sw, se))
+        # return Node(nw, ne, sw, se)
 
     nw = property(lambda self: None)
     ne = property(lambda self: None)
@@ -286,6 +264,10 @@ class Node(AbstractNode):
         self._ne = ne
         self._sw = sw
         self._se = se
+
+    @staticmethod
+    def level2_bitmask(mask):
+        pass
 
     level = property(lambda self: self._level)
     population = property(lambda self: self._population)
@@ -353,3 +335,14 @@ class HashLifeUniverse(Universe):
     @property
     def generation(self):
         return self._generation
+
+
+def test(data):
+    data = data  # The test input data
+    n = 6  # The number of times .extend() as been called
+
+    node = HashLifeUniverse(*data).root
+    for _ in range(n):
+        node = node.extend()
+    node = node.forward()
+    return node
