@@ -84,6 +84,7 @@ nodes = weakref.WeakValueDictionary()
 
 
 class AbstractNode:
+    BIG = False  # The value is ignored
 
     ####################################################################################################################
     #                                           Question 5 and 6                                                       #
@@ -137,17 +138,11 @@ class AbstractNode:
 
     @staticmethod
     def zero(k):
-        def _zero(i, x, y):
-            if i == 0:
-                return CellNode(False)
-            h = 2 ** (i - 1)
-            nw = _zero(i - 1, x, y)
-            ne = _zero(i - 1, x, y + h)
-            sw = _zero(i - 1, x + h, y)
-            se = _zero(i - 1, x + h, y + h)
-            return Node(nw, ne, sw, se)
-
-        return _zero(k, 0, 0)
+        if k == 0:
+            return AbstractNode.cell(False)
+        else:
+            zero = AbstractNode.zero(k - 1);
+            return AbstractNode.node(nw=zero, ne=zero, sw=zero, se=zero)
 
     ####################################################################################################################
     #                                           Question 3                                                             #
@@ -155,12 +150,14 @@ class AbstractNode:
 
     def extend(self):
         if self.level == 0:
-            return Node(CellNode(False), self, CellNode(False), CellNode(False))
-        return Node(
-            Node(self.zero(self.level - 1), self.zero(self.level - 1), self.zero(self.level - 1), self.nw),
-            Node(self.zero(self.level - 1), self.zero(self.level - 1), self.ne, self.zero(self.level - 1)),
-            Node(self.zero(self.level - 1), self.sw, self.zero(self.level - 1), self.zero(self.level - 1)),
-            Node(self.se, self.zero(self.level - 1), self.zero(self.level - 1), self.zero(self.level - 1)))
+            empty = AbstractNode.cell(False);
+            return AbstractNode.node(empty, AbstractNode.cell(self.alive), empty, empty)
+        zero = AbstractNode.zero(self.level - 1);
+        return AbstractNode.node(
+            AbstractNode.node(zero, zero, zero, self.nw),
+            AbstractNode.node(zero, zero, self.ne, zero),
+            AbstractNode.node(zero, self.sw, zero, zero),
+            AbstractNode.node(self.se, zero, zero, zero))
 
     ####################################################################################################################
     #                                           Question 4 and 5                                                       #
@@ -168,27 +165,57 @@ class AbstractNode:
 
     def forward(self):
         if self.population == 0:
-            return self
-        self._cache = dict() if self._cache is None else self._cache
-        current_node = AbstractNode.node(self.nw, self.ne, self.sw, self.se)
-        if current_node in self._cache:
-            return self._cache[current_node]
+            return AbstractNode.zero(self.level - 1)
+        if self._cache is not None:
+            return self._cache
         if self.level < 2:
-            self._cache[self] = None
+            return None
         if self.level == 2:
-            q_nw, q_ne, q_sw, q_se = current_node.nw, current_node.ne, current_node.sw, current_node.se
-            node = AbstractNode.node(q_nw.se, q_ne.sw, q_sw.ne, q_se.nw)
-            naive_uni = NaiveUniverse(4, 4, [[False, False, False, False], [False, node.sw.alive, node.se.alive, False],
-                                             [False, node.nw.alive, node.ne.alive, False],
-                                             [False, False, False, False]])
-            naive_uni.round()
-            nw, ne, sw, se = naive_uni.get(1, 2), naive_uni.get(2, 2), naive_uni.get(1, 1), naive_uni.get(2, 1)
-            self._cache[current_node] = AbstractNode.node(AbstractNode.cell(nw), AbstractNode.cell(ne),
-                                                          AbstractNode.cell(sw), AbstractNode.cell(se))
+            cells = [
+                self.se.se.alive, self.se.sw.alive, self.sw.se.alive, self.sw.sw.alive,
+                self.se.ne.alive, self.se.nw.alive, self.sw.ne.alive, self.sw.nw.alive,
+                self.ne.se.alive, self.ne.sw.alive, self.nw.se.alive, self.nw.sw.alive,
+                self.ne.ne.alive, self.ne.nw.alive, self.nw.ne.alive, self.nw.nw.alive]
+            w = 0
+            for i in range(len(cells) - 1, -1, -1):
+                w = w | (int(cells[i]) << i)
+            self._cache = Node.level2_bitmask(w)
+
         if self.level > 2:
-            q_nw, q_ne, q_sw, q_se = current_node.nw, current_node.ne, current_node.sw, current_node.se
-            self._cache[current_node] = AbstractNode.node(q_nw.se, q_ne.sw, q_sw.ne, q_se.nw)
-        return self._cache[current_node]
+            q_nw, q_tc, q_ne, q_cl, q_cc, q_cr, q_sw, q_bc, q_se = self._quadrant_builder()
+            r_nw, r_tc, r_ne, r_cl, r_cc, r_cr, r_sw, r_bc, r_se = q_nw.forward(), \
+                                                                   q_tc.forward(), \
+                                                                   q_ne.forward(), \
+                                                                   q_cl.forward(), \
+                                                                   q_cc.forward(), \
+                                                                   q_cr.forward(), \
+                                                                   q_sw.forward(), \
+                                                                   q_bc.forward(), \
+                                                                   q_se.forward()
+
+            a_nw, a_ne, a_sw, a_se = self._a_builder(r_nw, r_tc, r_ne, r_cl, r_cc, r_cr, r_sw, r_bc, r_se)
+            b_nw, b_ne, b_sw, b_se = a_nw.forward(), \
+                                     a_ne.forward(), \
+                                     a_sw.forward(), \
+                                     a_se.forward()
+            self._cache = AbstractNode.node(nw=b_nw, ne=b_ne, sw=b_sw, se=b_se)
+        return self._cache
+
+    def _quadrant_builder(self):
+        q_nw, q_ne, q_sw, q_se = self.nw, self.ne, self.sw, self.se
+        q_tc = AbstractNode.node(nw=q_nw.ne, ne=q_ne.nw, sw=q_nw.se, se=q_ne.sw)
+        q_cl = AbstractNode.node(nw=q_nw.sw, ne=q_nw.se, sw=q_sw.nw, se=q_sw.ne)
+        q_cc = AbstractNode.node(nw=q_nw.se, ne=q_ne.sw, sw=q_sw.ne, se=q_se.nw)
+        q_cr = AbstractNode.node(nw=q_ne.sw, ne=q_ne.se, sw=q_se.nw, se=q_se.ne)
+        q_bc = AbstractNode.node(nw=q_sw.ne, ne=q_se.nw, sw=q_sw.se, se=q_se.sw)
+        return q_nw, q_tc, q_ne, q_cl, q_cc, q_cr, q_sw, q_bc, q_se
+
+    def _a_builder(self, r_nw, r_tc, r_ne, r_cl, r_cc, r_cr, r_sw, r_bc, r_se):
+        a_nw = AbstractNode.node(nw=r_nw, ne=r_tc, sw=r_cl, se=r_cc)
+        a_ne = AbstractNode.node(nw=r_tc, ne=r_ne, sw=r_cc, se=r_cr)
+        a_sw = AbstractNode.node(nw=r_cl, ne=r_cc, sw=r_sw, se=r_bc)
+        a_se = AbstractNode.node(nw=r_cc, ne=r_cr, sw=r_bc, se=r_se)
+        return a_nw, a_ne, a_sw, a_se
 
         # if self not in self._cache:
         #     if self.level < 2:
@@ -208,8 +235,6 @@ class AbstractNode:
         #         print("level > 2", self._cache)
         #         # return Node(q_nw.se, q_ne.sw, q_sw.ne, q_se.nw)
         # return self._cache[self]
-
-
 
     ####################################################################################################################
     #                                           Question 6                                                             #
@@ -267,7 +292,54 @@ class Node(AbstractNode):
 
     @staticmethod
     def level2_bitmask(mask):
-        pass
+        # We have:
+        # mask_e_5 = 0b11101010111
+        # mask_e_6 = 0b111010101110
+        # mask_e_9 = 0b111010101110000
+        # mask_e_10 = 1110101011100000
+        # Therefore from mask_e_5 we can determine the others:
+        mask_e_5 = 0b11101010111
+        mask_e_6 = mask_e_5 << 1
+        mask_e_9 = mask_e_6 << 3
+        mask_e_10 = mask_e_9 << 1
+        nw = 1 \
+            if (Node.bit_counter(mask & mask_e_10) == 3 and Node.bit_alive(mask, 10) == 0) or \
+               (Node.bit_counter(mask & mask_e_10) in [2, 3] and Node.bit_alive(mask, 10) == 1) \
+            else 0
+        ne = 1 \
+            if (Node.bit_counter(mask & mask_e_9) == 3 and Node.bit_alive(mask, 9) == 0) or \
+               (Node.bit_counter(mask & mask_e_9) in [2, 3] and Node.bit_alive(mask, 9) == 1) \
+            else 0
+        sw = 1 \
+            if (Node.bit_counter(mask & mask_e_6) == 3 and Node.bit_alive(mask, 6) == 0) or \
+               (Node.bit_counter(mask & mask_e_6) in [2, 3] and Node.bit_alive(mask, 6) == 1) \
+            else 0
+        se = 1 \
+            if (Node.bit_counter(mask & mask_e_5) == 3 and Node.bit_alive(mask, 5) == 0) or \
+               (Node.bit_counter(mask & mask_e_5) in [2, 3] and Node.bit_alive(mask, 5) == 1) \
+            else 0
+        return AbstractNode.node(
+            nw=AbstractNode.cell(nw),
+            ne=AbstractNode.cell(ne),
+            sw=AbstractNode.cell(sw),
+            se=AbstractNode.cell(se))
+
+    @staticmethod
+    def bit_counter(mask):
+        if mask == 0:
+            return 0
+        i = 0
+        while mask != 0:
+            mask = mask & (mask - 1)
+            i += 1
+        return i
+
+    @staticmethod
+    def bit_alive(mask, i):
+        """ Return 1 or 0 depending on whether the ith-least significant bit
+                of x is 1 or 0.
+            """
+        return 0 if mask & (1 << i) == 0 else 1
 
     level = property(lambda self: self._level)
     population = property(lambda self: self._population)
@@ -318,8 +390,8 @@ class HashLifeUniverse(Universe):
         return create(0, 0, level)
 
     def get(self, i, j):
-        # Do something here
-        raise NotImplementedError()
+        return AbstractNode.node(AbstractNode.cell(False), AbstractNode.cell(False), AbstractNode.cell(False),
+                                 AbstractNode.cell(False))
 
     def rounds(self, n):
         # Do something here
@@ -337,12 +409,3 @@ class HashLifeUniverse(Universe):
         return self._generation
 
 
-def test(data):
-    data = data  # The test input data
-    n = 6  # The number of times .extend() as been called
-
-    node = HashLifeUniverse(*data).root
-    for _ in range(n):
-        node = node.extend()
-    node = node.forward()
-    return node
